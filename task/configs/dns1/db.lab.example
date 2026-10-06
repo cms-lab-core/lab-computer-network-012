@@ -1,0 +1,7 @@
+$TTL 60
+@ IN SOA ns1.lab.example. hostmaster.lab.example. 1 60 60 60 60
+@ IN NS ns1.lab.example.
+ns1 IN A 10.12.0.53
+web IN A 10.12.0.80
+web IN AAAA 2001:db8:12::80
+alias IN CNAME web.lab.example.
