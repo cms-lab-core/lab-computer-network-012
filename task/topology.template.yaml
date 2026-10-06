@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dns-config
+  namespace: $NAME
+data:
+  named.conf: |-
+    options {
+      directory "/var/cache/bind";
+      listen-on { any; };
+      listen-on-v6 { none; };
+      recursion no;
+      allow-query { any; };
+    };
+    zone "lab.example" {
+      type primary;
+      file "/var/lib/bind/db.lab.example";
+    };
+    
+  db.lab.example: |-
+    $TTL 60
+    @ IN SOA ns1.lab.example. hostmaster.lab.example. 1 60 60 60 60
+    @ IN NS ns1.lab.example.
+    ns1 IN A 10.12.0.53
+    web IN A 10.12.0.80
+    web IN AAAA 2001:db8:12::80
+    alias IN CNAME web.lab.example.
+    
+---
+apiVersion: c9s.run/v1alpha1
+kind: Topology
+metadata:
+  name: $NAME
+  namespace: $NAME
+spec:
+  expose:
+    exposeType: ClusterIP
+  deployment:
+    filesFromConfigMap:
+      dns1:
+        - filePath: configs/dns1/named.conf
+          configMapName: dns-config
+          configMapPath: named.conf
+          mode: read
+        - filePath: configs/dns1/db.lab.example
+          configMapName: dns-config
+          configMapPath: db.lab.example
+          mode: read
+  naming: non-prefixed
+  definition:
+    containerlab: |-
+      name: $NAME
+      topology:
+        defaults:
+          labels:
+            flow_direction: LR
+        nodes:
+          pc1:
+            kind: linux
+            image: ghcr.io/nicolaka/netshoot:v0.16
+            labels:
+              flow_icon: pc
+            exec:
+              - /bin/sh -c "adduser -D -s /bin/sh admin 2>/dev/null || true"
+              - /bin/sh -c "echo admin:admin | chpasswd"
+              - ssh-keygen -A
+              - mkdir -p /run/sshd
+              - /bin/sh -c "echo PasswordAuthentication=yes >> /etc/ssh/sshd_config"
+              - /usr/sbin/sshd
+          dns1:
+            kind: linux
+            image: internetsystemsconsortium/bind9:9.20
+            labels:
+              flow_icon: server
+            binds:
+              - configs/dns1/named.conf:/etc/bind/named.conf
+              - configs/dns1/db.lab.example:/var/lib/bind/db.lab.example
+            exec:
+              - ip link set eth1 up
+              - ip addr replace 10.12.0.53/24 dev eth1
+        links:
+          - endpoints: ["pc1:eth1", "dns1:eth1"]
